@@ -1,0 +1,49 @@
+api_keys:
+  primary: "YOUR_PRIMARY_KEY"
+  secondary: "YOUR_SECONDARY_KEY"
+
+venues:
+  - name: EXCHANGE_A
+    rest_url: "https://api.exchangea.example.com"
+    websocket_url: "wss://stream.exchangea.example.com"
+    heartbeat_interval_ms: 10000
+    trading_pairs:
+      - symbol: BTC-USD
+        min_order_size: 0.001
+        max_position_size: 1.5
+        taker_fee_bps: 7
+        maker_fee_bps: 5
+        latency_budget_ms: 50
+      - symbol: ETH-USD
+        min_order_size: 0.01
+        max_position_size: 25
+        taker_fee_bps: 7
+        maker_fee_bps: 5
+        latency_budget_ms: 50
+  - name: EXCHANGE_B
+    rest_url: "https://api.exchangeb.example.com"
+    websocket_url: "wss://stream.exchangeb.example.com"
+    heartbeat_interval_ms: 12000
+    trading_pairs:
+      - symbol: BTC-USD
+        min_order_size: 0.001
+        max_position_size: 1.0
+        taker_fee_bps: 8
+        maker_fee_bps: 6
+        latency_budget_ms: 60
+
+routing:
+  default_venue: EXCHANGE_A
+  failover_venue: EXCHANGE_B
+  latency_budget_ms: 75
+
+risk:
+  max_notional_usd: 250000
+  max_position_sizes:
+    BTC-USD: 1.5
+    ETH-USD: 25
+  daily_loss_limit_usd: 10000
+
+persistence:
+  database_url: "sqlite:///var/trading.db"
+  snapshot_interval_seconds: 30
