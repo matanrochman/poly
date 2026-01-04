@@ -1,6 +1,7 @@
 api_keys:
   primary: "YOUR_PRIMARY_KEY"
   secondary: "YOUR_SECONDARY_KEY"
+  polymarket: "YOUR_POLYMARKET_KEY"
 
 venues:
   - name: EXCHANGE_A
@@ -47,3 +48,35 @@ risk:
 persistence:
   database_url: "sqlite:///var/trading.db"
   snapshot_interval_seconds: 30
+
+polymarket:
+  websocket_url: "wss://feed-external.polymarket.com/ws"
+  rest_base_url: "https://clob.polymarket.com"            # public REST (order book snapshots)
+  metadata_base_url: "https://gamma-api.polymarket.com"   # market metadata REST
+  private_rest_url: "https://api.polymarket.com"          # authenticated trading REST
+  order_book_markets:                                     # explicit order book subscriptions
+    - "MARKET_ID_A"
+    - "MARKET_ID_B"
+  trade_markets:                                          # explicit trade subscriptions (defaults to order_book_markets)
+    - "MARKET_ID_A"
+    - "MARKET_ID_B"
+  target_markets:                                         # markets that can be traded when edges are present
+    - id: "MARKET_ID_A"
+      description: "Election: Candidate A to win"
+    - id: "MARKET_ID_B"
+      description: "Election: Candidate B to win"
+  subscribe_metadata: true
+  max_lag_seconds: 5
+  backoff:
+    initial: 1.0
+    maximum: 30.0
+    factor: 2.0
+    jitter: 0.25
+
+arbitrage:
+  min_edge_bps: 15.0
+
+trading:
+  dry_run: true                    # never submit live orders when true
+  max_slippage_bps: 50.0           # protect fills when sending orders (0.50%)
+  max_orders_per_minute: 30        # throttle live order submission rate

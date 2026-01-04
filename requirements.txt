@@ -3,4 +3,6 @@ websockets
 fastapi
 uvicorn
 pydantic
+pyyaml
 PyYAML
+python-dotenv
