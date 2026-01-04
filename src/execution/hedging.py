@@ -68,14 +68,25 @@ class HedgeExecutor:
         client: Optional[HedgeTradingClient] = None,
         logger: Optional[logging.Logger] = None,
         timeout_seconds: float = 5.0,
+        max_failures: int = 3,
     ) -> None:
         self.order_manager = order_manager
         self.client = client or NoopHedgeClient()
         self.logger = logger or logging.getLogger(__name__)
         self.timeout_seconds = timeout_seconds
+        self.max_failures = max_failures
+        self.failure_streak = 0
+        self.circuit_open = False
 
     async def submit_hedges(self, hedge_actions: Iterable[HedgeAction]) -> List[OrderState]:
         """Submit all hedge actions, returning their tracked order states."""
+
+        if self.circuit_open:
+            self.logger.error(
+                "Hedge circuit open, skipping hedge submissions",
+                extra={"event": "hedge_circuit_open"},
+            )
+            return []
 
         states: List[OrderState] = []
         for action in hedge_actions:
@@ -121,12 +132,21 @@ class HedgeExecutor:
                 extra={"event": "hedge_timeout", "symbol": action.symbol, "order_id": order_id},
             )
             state.status = "timeout"
+            self._record_failure()
+            return state
+
+        if self._was_rejected(response):
+            state.status = "rejected"
+            self._record_failure()
             return state
 
         filled = self._extract_filled_quantity(response)
         if filled > 0:
             self.order_manager.update_fill(order_id, filled)
             state = self.order_manager.get_order(order_id)
+            self._record_success()
+        else:
+            self._record_success()
         return state
 
     def _extract_filled_quantity(self, response: Optional[dict]) -> float:
@@ -141,6 +161,26 @@ class HedgeExecutor:
             except (TypeError, ValueError):
                 continue
         return 0.0
+
+    def _was_rejected(self, response: Optional[dict]) -> bool:
+        if not response:
+            return False
+        status = response.get("status") or response.get("state")
+        if status and str(status).lower() in {"reject", "rejected", "error"}:
+            return True
+        return bool(response.get("rejected"))
+
+    def _record_failure(self) -> None:
+        self.failure_streak += 1
+        if self.failure_streak >= self.max_failures:
+            self.circuit_open = True
+            self.logger.error(
+                "Hedge circuit opened after %s consecutive failures", self.failure_streak,
+                extra={"event": "hedge_circuit_open", "failures": self.failure_streak},
+            )
+
+    def _record_success(self) -> None:
+        self.failure_streak = 0
 
     def _generate_order_id(self, prefix: str) -> str:
         return f"{prefix}-{uuid.uuid4().hex}"
