@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from dotenv import load_dotenv
 import yaml
 
 from src.data.polymarket_client import BackoffConfig, NormalizedMarketData, PolymarketClient
@@ -62,12 +64,16 @@ class MarketStreamApp:
         self.logger = logging.getLogger("polymarket.app")
         polymarket_config = config.get("polymarket", {})
         arbitrage_config = config.get("arbitrage", {})
+        trading_config = config.get("trading", {})
 
         self.max_lag_seconds = float(polymarket_config.get("max_lag_seconds", DEFAULT_MAX_LAG_SECONDS))
         self.client = build_polymarket_client(polymarket_config, self.logger)
         self.detector = MarketArbitrageDetector(
             min_edge_bps=float(arbitrage_config.get("min_edge_bps", 10.0)),
         )
+        self.dry_run = bool(trading_config.get("dry_run", False))
+        self.max_slippage_bps = float(trading_config.get("max_slippage_bps", 0.0))
+        self.max_orders_per_minute = int(trading_config.get("max_orders_per_minute", 0))
 
         self._sequence_tracker: Dict[str, int] = {}
 
@@ -174,12 +180,56 @@ class MarketStreamApp:
             "notional": opportunity.notional,
             "max_size": opportunity.max_size,
             "details": opportunity.details,
+            "dry_run": self.dry_run,
+            "max_slippage_bps": self.max_slippage_bps,
+            "max_orders_per_minute": self.max_orders_per_minute,
         }
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Stream Polymarket data and detect arbitrage.")
+    parser.add_argument(
+        "--config",
+        default=os.getenv("CONFIG_PATH", str(DEFAULT_CONFIG_PATH)),
+        help="Path to the YAML config file (defaults to CONFIG_PATH env or config/settings.yaml).",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Force dry-run mode (never submit live orders) regardless of config.",
+    )
+    parser.add_argument(
+        "--min-edge-bps",
+        type=float,
+        help="Override minimum arbitrage edge threshold in basis points.",
+    )
+    parser.add_argument(
+        "--max-orders-per-minute",
+        type=int,
+        help="Throttle live order submissions to this rate.",
+    )
+    return parser.parse_args()
+
+
+def _apply_cli_overrides(config: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]:
+    arbitrage_config = config.setdefault("arbitrage", {})
+    trading_config = config.setdefault("trading", {})
+
+    if args.min_edge_bps is not None:
+        arbitrage_config["min_edge_bps"] = args.min_edge_bps
+    if args.dry_run:
+        trading_config["dry_run"] = True
+    if args.max_orders_per_minute is not None:
+        trading_config["max_orders_per_minute"] = args.max_orders_per_minute
+    return config
+
+
 def main() -> None:
+    load_dotenv()
+    args = _parse_args()
     configure_logging()
-    config = load_config()
+    config = load_config(Path(args.config))
+    config = _apply_cli_overrides(config, args)
     app = MarketStreamApp(config)
     asyncio.run(app.run())
 
