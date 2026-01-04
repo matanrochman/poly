@@ -21,6 +21,7 @@ from typing import Any, Dict, Iterable, List, Optional, Protocol
 from src.execution.hedging import HedgeExecutor
 from src.execution.order_manager import OrderManager, OrderRequest, OrderState
 from src.infra.persistence import FileSystemBackend, SnapshotStore, SQLiteStorageBackend
+from src.infra.metrics import MetricsSink
 from src.pricing.market_arbitrage import CompleteSetOpportunity, MarketBook, OutcomeQuote
 from src.risk.inventory import InventoryCaps
 from src.risk.limits import RiskLimits
@@ -92,6 +93,7 @@ class PolymarketExecutor:
         snapshot_store: Optional[SnapshotStore] = None,
         hedge_executor: Optional[HedgeExecutor] = None,
         config: Optional[ExecutionConfig] = None,
+        metrics: Optional[MetricsSink] = None,
         logger: Optional[logging.Logger] = None,
     ) -> None:
         self.client = client
@@ -104,7 +106,9 @@ class PolymarketExecutor:
         self.hedge_executor = hedge_executor
         if self.hedge_executor:
             self.hedge_executor.max_failures = self.config.max_hedge_failures
+            self.hedge_executor.metrics = metrics or getattr(self.hedge_executor, "metrics", None)
         self.logger = logger or logging.getLogger(__name__)
+        self.metrics = metrics
         self._recent_opportunities: Dict[str, float] = {}
         self._positions: Dict[str, Position] = {}
         self._inventory: Dict[str, float] = {}
@@ -237,6 +241,7 @@ class PolymarketExecutor:
                 "Order timed out for %s", request.symbol,
                 extra={"event": "order_timeout", "order_id": order_id, "symbol": request.symbol},
             )
+            self._record_metric("order_timeout", {"symbol": request.symbol})
             state.status = "timeout"
             self._handle_reject()
             return state
@@ -245,6 +250,7 @@ class PolymarketExecutor:
         if status == "rejected":
             state.status = "rejected"
             self._handle_reject()
+            self._record_metric("order_rejected", {"symbol": request.symbol})
             return state
 
         filled = self._extract_filled_quantity(response)
@@ -287,6 +293,7 @@ class PolymarketExecutor:
             "Execution halted due to %s", reason,
             extra={"event": "circuit_breaker", "reason": reason, "market_id": market_id},
         )
+        self._record_metric("circuit_breaker", {"reason": reason})
 
     def _edge_survives_costs(self, opportunity: CompleteSetOpportunity, market: MarketBook) -> bool:
         fee_multiplier = 1 + (market.fee_bps or 0) / 10_000
@@ -392,6 +399,7 @@ class PolymarketExecutor:
         self._reject_streak += 1
         if self._reject_streak >= self.config.max_reject_streak:
             self._trip_circuit("reject_streak", None)
+        self._record_metric("reject_streak", {"streak": self._reject_streak})
 
     def _record_fill(
         self, request: OrderRequest, filled_quantity: float, response: Optional[Dict[str, Any]], market: MarketBook
@@ -402,6 +410,10 @@ class PolymarketExecutor:
         updated, realized = self._apply_fill_to_position(position, request.side, filled_quantity, price)
         self._positions[symbol] = updated
         self._inventory[symbol] = updated.quantity
+        self._record_metric(
+            "order_filled",
+            {"symbol": symbol, "filled": filled_quantity, "price": price, "avg_position": updated.avg_price},
+        )
 
         if realized != 0:
             self.pnl_tracker.add_realized(symbol, realized)
@@ -536,6 +548,11 @@ class PolymarketExecutor:
 
     def _generate_order_id(self, prefix: str) -> str:
         return f"{prefix}-{uuid.uuid4().hex}"
+
+    def _record_metric(self, event: str, payload: Dict[str, Any]) -> None:
+        if not self.metrics:
+            return
+        self.metrics.observe(event, payload)
 
 
 __all__ = ["PolymarketExecutor", "ExecutionConfig", "ExecutionReport"]

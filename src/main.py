@@ -14,6 +14,7 @@ import yaml
 
 from src.data.polymarket_client import BackoffConfig, NormalizedMarketData, PolymarketClient
 from src.infra.logging import configure_logging
+from src.infra.metrics import MetricsSink
 from src.pricing.market_arbitrage import CompleteSetOpportunity, MarketArbitrageDetector
 
 DEFAULT_CONFIG_PATH = Path(os.getenv("CONFIG_PATH", "config/settings.yaml"))
@@ -39,7 +40,7 @@ def _backoff_from_config(config: Dict[str, Any]) -> BackoffConfig:
     )
 
 
-def build_polymarket_client(config: Dict[str, Any], logger: logging.Logger) -> PolymarketClient:
+def build_polymarket_client(config: Dict[str, Any], logger: logging.Logger, metrics: Optional[MetricsSink]) -> PolymarketClient:
     """Instantiate the Polymarket client from configuration."""
 
     backoff = _backoff_from_config(config.get("backoff", {}))
@@ -53,6 +54,7 @@ def build_polymarket_client(config: Dict[str, Any], logger: logging.Logger) -> P
         trade_markets=trade_markets,
         subscribe_metadata=bool(config.get("subscribe_metadata", True)),
         backoff=backoff,
+        metrics=metrics,
         logger=logger.getChild("client"),
     )
 
@@ -65,9 +67,15 @@ class MarketStreamApp:
         polymarket_config = config.get("polymarket", {})
         arbitrage_config = config.get("arbitrage", {})
         trading_config = config.get("trading", {})
+        metrics_config = config.get("metrics", {})
+
+        self.metrics = MetricsSink(
+            metrics_file=Path(metrics_config.get("prometheus_path", "var/metrics.prom")),
+            emit_textfile=bool(metrics_config.get("prometheus_textfile", False) or os.getenv("PROM_TEXTFILE_EXPORT")),
+        )
 
         self.max_lag_seconds = float(polymarket_config.get("max_lag_seconds", DEFAULT_MAX_LAG_SECONDS))
-        self.client = build_polymarket_client(polymarket_config, self.logger)
+        self.client = build_polymarket_client(polymarket_config, self.logger, self.metrics)
         self.detector = MarketArbitrageDetector(
             min_edge_bps=float(arbitrage_config.get("min_edge_bps", 10.0)),
         )
@@ -165,6 +173,17 @@ class MarketStreamApp:
         opportunity = self.detector.ingest(data)
         if not opportunity:
             return
+
+        edge_bps = opportunity.edge * 10_000
+        self.metrics.observe(
+            "edge_detected",
+            {
+                "edge_bps": edge_bps,
+                "notional": opportunity.notional,
+                "max_size": opportunity.max_size,
+            },
+        )
+        self.metrics.incr(f"edge_{opportunity.direction}_total")
 
         self.logger.info(
             "Arbitrage opportunity detected for %s", opportunity.market_id,

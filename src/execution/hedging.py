@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Iterable, List, Optional, Protocol
 
 from src.execution.order_manager import OrderManager, OrderRequest, OrderState, OrderType
+from src.infra.metrics import MetricsSink
 
 
 @dataclass
@@ -69,6 +70,7 @@ class HedgeExecutor:
         logger: Optional[logging.Logger] = None,
         timeout_seconds: float = 5.0,
         max_failures: int = 3,
+        metrics: Optional[MetricsSink] = None,
     ) -> None:
         self.order_manager = order_manager
         self.client = client or NoopHedgeClient()
@@ -77,6 +79,7 @@ class HedgeExecutor:
         self.max_failures = max_failures
         self.failure_streak = 0
         self.circuit_open = False
+        self.metrics = metrics
 
     async def submit_hedges(self, hedge_actions: Iterable[HedgeAction]) -> List[OrderState]:
         """Submit all hedge actions, returning their tracked order states."""
@@ -133,11 +136,13 @@ class HedgeExecutor:
             )
             state.status = "timeout"
             self._record_failure()
+            self._record_metric("hedge_timeout", {"symbol": action.symbol})
             return state
 
         if self._was_rejected(response):
             state.status = "rejected"
             self._record_failure()
+            self._record_metric("hedge_rejected", {"symbol": action.symbol})
             return state
 
         filled = self._extract_filled_quantity(response)
@@ -145,6 +150,7 @@ class HedgeExecutor:
             self.order_manager.update_fill(order_id, filled)
             state = self.order_manager.get_order(order_id)
             self._record_success()
+            self._record_metric("hedge_filled", {"symbol": action.symbol, "filled": filled})
         else:
             self._record_success()
         return state
@@ -178,12 +184,21 @@ class HedgeExecutor:
                 "Hedge circuit opened after %s consecutive failures", self.failure_streak,
                 extra={"event": "hedge_circuit_open", "failures": self.failure_streak},
             )
+            self._record_metric("hedge_circuit_open", {"failures": self.failure_streak})
+        else:
+            self._record_metric("hedge_failure", {"failure_streak": self.failure_streak})
 
     def _record_success(self) -> None:
         self.failure_streak = 0
+        self._record_metric("hedge_success", {"failure_streak": self.failure_streak})
 
     def _generate_order_id(self, prefix: str) -> str:
         return f"{prefix}-{uuid.uuid4().hex}"
+
+    def _record_metric(self, event: str, payload: dict) -> None:
+        if not self.metrics:
+            return
+        self.metrics.observe(event, payload)
 
 
 __all__ = [
