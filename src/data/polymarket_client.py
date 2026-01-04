@@ -102,7 +102,10 @@ class PolymarketClient:
                 self.logger.exception("Polymarket stream failure: %s", exc)
             elapsed = time.monotonic() - start_time
             sleep_for = min(delay, self.backoff.maximum) + random.uniform(0, self.backoff.jitter)
-            self.logger.info("Reconnecting after %.2fs (elapsed %.2fs)", sleep_for, elapsed)
+            self.logger.info(
+                "Reconnecting to Polymarket feed",
+                extra={"event": "reconnect", "sleep_seconds": sleep_for, "elapsed_seconds": elapsed},
+            )
             await asyncio.sleep(sleep_for)
             delay = min(delay * self.backoff.factor, self.backoff.maximum)
 
@@ -121,11 +124,23 @@ class PolymarketClient:
         for market_id in self.order_book_markets:
             payload = {"type": "subscribe", "channel": "orderbook", "market": market_id}
             await ws.send(json.dumps(payload))
+            self.logger.info(
+                "Subscribed to orderbook",
+                extra={"event": "subscription", "channel": "orderbook", "market_id": market_id},
+            )
         for market_id in self.trade_markets:
             payload = {"type": "subscribe", "channel": "trades", "market": market_id}
             await ws.send(json.dumps(payload))
+            self.logger.info(
+                "Subscribed to trades",
+                extra={"event": "subscription", "channel": "trades", "market_id": market_id},
+            )
         if self.subscribe_metadata:
             await ws.send(json.dumps({"type": "subscribe", "channel": "markets"}))
+            self.logger.info(
+                "Subscribed to markets metadata",
+                extra={"event": "subscription", "channel": "markets"},
+            )
 
     def _normalize_message(self, message: Dict[str, Any]) -> Optional[NormalizedMarketData]:
         event_type = message.get("type") or message.get("channel")
@@ -270,6 +285,16 @@ class PolymarketClient:
             type="order_book_snapshot",
             raw=response,
         )
+        self.logger.info(
+            "Recovered orderbook snapshot for %s",
+            market_id,
+            extra={
+                "event": "gap_recovery",
+                "channel": "orderbook",
+                "market_id": market_id,
+                "outcome_id": outcome_id,
+            },
+        )
         self._emit_metrics(
             "rest_fallback_orderbook",
             {"latency_ms": snapshot.latency_ms or 0.0, "gap_resolved": 1.0},
@@ -307,6 +332,16 @@ class PolymarketClient:
             liquidity=self._safe_float(trade.get("liquidity")),
             type="trade_snapshot",
             raw=trade,
+        )
+        self.logger.info(
+            "Recovered trade snapshot for %s",
+            market_id,
+            extra={
+                "event": "gap_recovery",
+                "channel": "trades",
+                "market_id": market_id,
+                "outcome_id": outcome_id,
+            },
         )
         self._emit_metrics(
             "rest_fallback_trade",
@@ -360,7 +395,10 @@ class PolymarketClient:
 
         gap = sequence - previous - 1
         metrics = {"gap": float(gap), "sequence": float(sequence)}
-        self.logger.warning("Sequence gap detected for %s (prev=%s, curr=%s)", key, previous, sequence)
+        self.logger.warning(
+            "Sequence gap detected for %s (prev=%s, curr=%s)", key, previous, sequence,
+            extra={"event": "sequence_gap", "key": key, "previous": previous, "current": sequence, "gap": gap},
+        )
         self._emit_metrics("sequence_gap", metrics)
         return True
 
