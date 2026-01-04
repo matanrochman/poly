@@ -2,10 +2,12 @@
 
 from .logging import configure_logging
 from .metrics import MetricsSink
-from .persistence import SnapshotStore
+from .persistence import FileSystemBackend, SQLiteStorageBackend, SnapshotStore
 
 __all__ = [
     "configure_logging",
     "MetricsSink",
+    "FileSystemBackend",
+    "SQLiteStorageBackend",
     "SnapshotStore",
 ]

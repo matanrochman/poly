@@ -53,3 +53,8 @@ class OrderManager:
         """Return the current known orders."""
 
         return list(self._orders.values())
+
+    def get_order(self, order_id: str) -> OrderState:
+        """Fetch a single order by ID."""
+
+        return self._orders[order_id]
