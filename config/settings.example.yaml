@@ -47,3 +47,24 @@ risk:
 persistence:
   database_url: "sqlite:///var/trading.db"
   snapshot_interval_seconds: 30
+
+polymarket:
+  websocket_url: "wss://feed-external.polymarket.com/ws"
+  rest_base_url: "https://clob.polymarket.com"
+  metadata_base_url: "https://gamma-api.polymarket.com"
+  order_book_markets:
+    - "MARKET_ID_A"
+    - "MARKET_ID_B"
+  trade_markets:
+    - "MARKET_ID_A"
+    - "MARKET_ID_B"
+  subscribe_metadata: true
+  max_lag_seconds: 5
+  backoff:
+    initial: 1.0
+    maximum: 30.0
+    factor: 2.0
+    jitter: 0.25
+
+arbitrage:
+  min_edge_bps: 15.0
