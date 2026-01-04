@@ -20,6 +20,8 @@ from typing import Any, AsyncIterator, Callable, Dict, Iterable, List, Optional
 import requests
 import websockets
 
+from src.infra.metrics import MetricsSink
+
 
 @dataclass
 class BackoffConfig:
@@ -69,6 +71,7 @@ class PolymarketClient:
         subscribe_metadata: bool = True,
         backoff: Optional[BackoffConfig] = None,
         metrics_callback: Optional[Callable[[str, Dict[str, float]], None]] = None,
+        metrics: Optional[MetricsSink] = None,
         logger: Optional[logging.Logger] = None,
     ) -> None:
         self.websocket_url = websocket_url
@@ -78,7 +81,8 @@ class PolymarketClient:
         self.trade_markets = set(trade_markets or [])
         self.subscribe_metadata = subscribe_metadata
         self.backoff = backoff or BackoffConfig()
-        self.metrics_callback = metrics_callback
+        self.metrics = metrics
+        self.metrics_callback = metrics_callback or (self.metrics.observe if self.metrics else None)
         self.logger = logger or logging.getLogger(__name__)
 
         self._sequence_tracker: Dict[str, int] = {}
