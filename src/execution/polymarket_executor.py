@@ -52,6 +52,7 @@ class ExecutionConfig:
 
     max_fee_bps: float = 100.0
     max_slippage_pct: float = 0.01
+    dry_run: bool = False
     timeout_seconds: float = 5.0
     idempotency_ttl_seconds: float = 60.0
     max_data_staleness_seconds: float = 10.0
@@ -234,6 +235,8 @@ class PolymarketExecutor:
     ) -> OrderState:
         state = OrderState(order_id=order_id, request=request)
         self.order_manager.record_submission(state)
+        if self.config.dry_run:
+            return self._simulate_fill(state, market)
         try:
             response = await self._call_with_timeout(func, *args, client_order_id=order_id)
         except asyncio.TimeoutError:
@@ -553,6 +556,31 @@ class PolymarketExecutor:
         if not self.metrics:
             return
         self.metrics.observe(event, payload)
+
+    def _simulate_fill(self, state: OrderState, market: MarketBook) -> OrderState:
+        """Record a hypothetical fill without touching the network."""
+
+        fill_quantity = state.request.quantity
+        state.status = "filled"
+        self.order_manager.update_fill(state.order_id, fill_quantity)
+        filled_state = self.order_manager.get_order(state.order_id)
+        self._record_fill(filled_state.request, fill_quantity, {"price": filled_state.request.price}, market)
+        self._reject_streak = 0
+        self.logger.info(
+            "Dry-run simulated order for %s", filled_state.request.symbol,
+            extra={
+                "event": "dry_run_order",
+                "symbol": filled_state.request.symbol,
+                "side": filled_state.request.side,
+                "quantity": filled_state.request.quantity,
+                "price": filled_state.request.price,
+            },
+        )
+        self._record_metric(
+            "dry_run_order",
+            {"symbol": filled_state.request.symbol, "quantity": fill_quantity, "side": filled_state.request.side},
+        )
+        return filled_state
 
 
 __all__ = ["PolymarketExecutor", "ExecutionConfig", "ExecutionReport"]
