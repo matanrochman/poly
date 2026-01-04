@@ -1,4 +1,7 @@
 requests
 websockets
+fastapi
+uvicorn
+pyyaml
 PyYAML
 python-dotenv
