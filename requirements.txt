@@ -1,2 +1,5 @@
 requests
 websockets
+fastapi
+uvicorn
+pyyaml
