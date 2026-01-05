@@ -26,7 +26,6 @@ def create_dashboard_app(state: "DashboardState") -> FastAPI:
         return state.actions[-100:]
 """Minimal FastAPI dashboard for monitoring trades, allocations, and dry-runs."""
 
-from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict
