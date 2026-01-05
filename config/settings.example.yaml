@@ -3,6 +3,18 @@ api_keys:
   secondary: "YOUR_SECONDARY_KEY"
   polymarket: "YOUR_POLYMARKET_KEY"
 
+polymarket:
+  websocket_url: "wss://feed-external.polymarket.com/ws"
+  rest_base_url: "https://clob.polymarket.com"
+  metadata_base_url: "https://gamma-api.polymarket.com"
+  order_book_markets:
+    - "MARKET_ID_1"
+    - "MARKET_ID_2"
+  trade_markets:
+    - "MARKET_ID_1"
+    - "MARKET_ID_2"
+  subscribe_metadata: true
+
 venues:
   - name: EXCHANGE_A
     rest_url: "https://api.exchangea.example.com"
