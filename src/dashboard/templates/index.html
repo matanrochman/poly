@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Polymarket Arb Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 1.5rem; background: #0f172a; color: #e2e8f0; }
+    h1, h2 { color: #7dd3fc; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 1.5rem; }
+    th, td { border: 1px solid #1e293b; padding: 0.5rem; text-align: left; }
+    th { background: #1e293b; }
+    tr:nth-child(even) { background: #0b1220; }
+    .badge { padding: 0.2rem 0.4rem; border-radius: 4px; background: #22c55e; color: #0f172a; font-weight: bold; }
+    .container { max-width: 1100px; margin: auto; }
+    .card { background: #111827; border: 1px solid #1e293b; padding: 1rem; border-radius: 8px; margin-bottom: 1.2rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Polymarket Arbitrage Dashboard</h1>
+    <div class="card">
+      <div>Status: <span class="badge">{{ health.status }}</span></div>
+      <div>Opportunities tracked: {{ health.opportunities }}</div>
+    </div>
+
+    <div class="card">
+      <h2>Recent Opportunities</h2>
+      {% if opportunities %}
+      <table>
+        <thead>
+          <tr>
+            <th>Market</th>
+            <th>Direction</th>
+            <th>Edge</th>
+            <th>Notional</th>
+            <th>Max Size</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for opp in opportunities %}
+          <tr>
+            <td>{{ opp.market_id }}</td>
+            <td>{{ opp.direction }}</td>
+            <td>{{ "%.4f"|format(opp.edge) }}</td>
+            <td>{{ "%.4f"|format(opp.notional) }}</td>
+            <td>{{ "%.4f"|format(opp.max_size) }}</td>
+            <td>{{ opp.details }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <p>No opportunities yet.</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Recent Actions</h2>
+      {% if actions %}
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Type</th>
+            <th>Data</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for action in actions %}
+          <tr>
+            <td>{{ action.get("ts", "") }}</td>
+            <td>{{ action.get("type", "") }}</td>
+            <td><pre style="white-space: pre-wrap; margin: 0;">{{ action }}</pre></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <p>No actions recorded.</p>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>
