@@ -1,2 +1,6 @@
 requests
 websockets
+fastapi
+uvicorn
+pydantic
+PyYAML
