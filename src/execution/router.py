@@ -1,7 +1,9 @@
 """Route orders to venues based on latency and availability."""
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable, List, Optional
+
+from src.execution.hedging import HedgeAction
 
 
 @dataclass
@@ -29,6 +31,19 @@ class ExecutionRouter:
                     return venue_name
         return self._fastest_within_budget(venue_latencies_ms)
 
+    def plan_opportunity(
+        self,
+        symbol: str,
+        venue_latencies_ms: Dict[str, int],
+        hedge_actions: Optional[List[HedgeAction]] = None,
+    ) -> Optional["RoutedOpportunity"]:
+        """Return the chosen venue and optional hedge actions for downstream execution."""
+
+        venue = self.choose_venue(symbol, venue_latencies_ms)
+        if venue is None:
+            return None
+        return RoutedOpportunity(primary_venue=venue, hedge_actions=hedge_actions or [])
+
     def _preference_order(self, preference: RoutePreference) -> Iterable[str]:
         if preference.secondary:
             return (preference.primary, preference.secondary)
@@ -43,3 +58,11 @@ class ExecutionRouter:
         if not eligible:
             return None
         return min(eligible, key=eligible.get)
+
+
+@dataclass
+class RoutedOpportunity:
+    """Routing decision plus optional hedge actions for the opportunity."""
+
+    primary_venue: str
+    hedge_actions: List[HedgeAction]
